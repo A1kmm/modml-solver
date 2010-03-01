@@ -1,0 +1,10 @@
+*.lo
+*.la
+Makefile
+sundials-config
+config.h
+config.log
+config.status
+sundials_config.h
+libtool
+.libs
