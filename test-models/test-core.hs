@@ -1,5 +1,5 @@
-import BasicDAEModel
-import BasicDAESolver
+import ModML.Core.BasicDAEModel
+import ModML.Core.BasicDAESolver
 
 mymodelBuilder = do
   x <- newRealVariable
