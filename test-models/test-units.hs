@@ -13,12 +13,15 @@ mymodelBuilder = do
                               realConstant dimensionless (pi / 4)
                              )
   let time = boundVariable
-  let time0 = realConstant uSecond 0
+  let time0 = realConstant uMetre 0
   newBoundaryEq (time .==. time0) xcoord {- == -} (fst initialPosition)
   newBoundaryEq (time .==. time0) ycoord {- == -} (snd initialPosition)
   newBoundaryEq (time .==. time0) (derivative ycoord) {- == -} (sinX (snd initialPolarVelocity) .*. fst initialPolarVelocity)
   derivative xcoord `newEq` (cosX (snd initialPolarVelocity) .*. fst initialPolarVelocity)
   (derivative (derivative ycoord)) `newEq` gravity
+
+  g <- newNamedRealVariable uMetre "g"
+  g `newEq` gravity
 
 mymodel :: ModML.Core.BasicDAEModel.BasicDAEModel
 mymodel = buildModel uSecond mymodelBuilder
