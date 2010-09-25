@@ -1,5 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
-module ModML.Core.BasicDAESolver
+module ModML.Solver.BasicDAESolver
     (
      CodeGenerationError (OtherProblem),
      AllowCodeGenError,
