@@ -33,4 +33,5 @@ executable csv-autosolver
                  parsec == 3.*,
                  filepath == 1.1.*,
                  directory == 1.0.*,
-                 process == 1.0.*
+                 process == 1.0.*,
+                 cmdargs == 0.1.*
