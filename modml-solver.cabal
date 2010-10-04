@@ -14,6 +14,7 @@ library
   hs-source-dirs:       .
   exposed-modules:
     ModML.Solver.BasicDAESolver
+    ModML.Solver.CSVSolver
   build-depends: base ==4.*,
                  process ==1.0.*,
                  unix == 2.4.*,
@@ -34,4 +35,4 @@ executable csv-autosolver
                  filepath == 1.1.*,
                  directory == 1.0.*,
                  process == 1.0.*,
-                 cmdargs == 0.1.*
+                 cmdargs == 0.4.*
