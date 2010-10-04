@@ -18,16 +18,15 @@ data CSVSolve = CSVSolve { modelFile :: String, includedir :: [String]
                   deriving (Show, Data, Typeable)
 
 csvSolveArgs =
-    CSVSolve { modelFile = def &=
-                 text "The .hs toplevel model file" &
-                 typFile & argPos 0,
+    CSVSolve { modelFile = def &= argPos 0 &=
+                 typ "MODELFILE",
                includedir = def &=
-                 text "Directories to search for includes" &
-                 explicit & flag "I" &
+                 help "Directories to search for includes" &=
+                 explicit &= name "I" &=
                  typDir
              }
 
-main = cmdArgs "csv-autosolver" [mode $ csvSolveArgs] >>= csvAutoSolver
+main = cmdArgs csvSolveArgs >>= csvAutoSolver
 
 withRight (Left e) = error (shows e "Unexpected Left: ")
 withRight (Right x) = x
@@ -48,7 +47,7 @@ languageOptions = do
 commentMaybePackage =
     do
       many whitespace
-      char '#'
+      try $ string "--"
       (try $ do
          char '+'
          many whitespaceNonbreaking
@@ -61,7 +60,7 @@ showCSVSolver modelModule =
     showString "import " .
     showString modelModule .
     showString "\n\
-               \import ModML.Solver.CSVSolver\
+               \import ModML.Solver.CSVSolver\n\
                \main = csvMain model"
 
 intermix :: [a] -> [a] -> [a]
@@ -80,12 +79,13 @@ csvAutoSolver (CSVSolve { modelFile = mf, includedir = dirs }) = do
   let modelModule = dropExtension modelFile
   tmpdir <- getTemporaryDirectory
   (solveFile, hSolveFile) <- openTempFile tmpdir "SolveAsCSV.hs"
-  -- Write the model...
-  flip finally (hClose hSolveFile) $
-    hPutStr hSolveFile (showCSVSolver modelModule "")
-  -- Compile it...
-  rawSystem "ghc" $ "--make":"-hide-all-packages":((map ("-i"++) (modelPath:dirs)) ++
-                                                   (beforeEach "-package" packages) ++
+  flip finally (removeFile solveFile) $ do
+    -- Write the model...
+    flip finally (hClose hSolveFile) $
+         hPutStr hSolveFile (showCSVSolver modelModule "")
+    -- Compile it...
+    rawSystem "ghc" $ "--make":"-hide-all-packages":((map ("-i"++) (modelPath:dirs)) ++
+                                                   (beforeEach "-package" ("base":"ModML-Solver":packages)) ++
                                                    [solveFile])
-  let binary = tmpdir </> (dropExtension solveFile)
-  rawSystem binary []
+    let binary = tmpdir </> (dropExtension solveFile)
+    rawSystem binary []
