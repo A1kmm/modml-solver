@@ -6,6 +6,7 @@ import System.Console.CmdArgs
 import Text.Parsec
 import Text.Parsec.String
 import System.FilePath
+import System.Path
 import System.Process
 import Control.Monad
 import Control.Exception hiding (try)
@@ -47,7 +48,7 @@ languageOptions = do
 commentMaybePackage =
     do
       many whitespace
-      try $ string "--"
+      string "-- "
       (try $ do
          char '+'
          many whitespaceNonbreaking
@@ -76,6 +77,8 @@ csvAutoSolver (CSVSolve { modelFile = mf, includedir = dirs }) = do
   packages <- liftM withRight $ parseFromFile extractPackages mf
   -- Get a name for the model...
   let (modelPath, modelFile) = splitFileName mf
+  cwd <- getCurrentDirectory
+  let modelPath' = fromMaybe (error "Invalid relative model path") $ absNormPath cwd modelPath
   let modelModule = dropExtension modelFile
   tmpdir <- getTemporaryDirectory
   (solveFile, hSolveFile) <- openTempFile tmpdir "SolveAsCSV.hs"
@@ -84,7 +87,7 @@ csvAutoSolver (CSVSolve { modelFile = mf, includedir = dirs }) = do
     flip finally (hClose hSolveFile) $
          hPutStr hSolveFile (showCSVSolver modelModule "")
     -- Compile it...
-    rawSystem "ghc" $ "--make":"-hide-all-packages":((map ("-i"++) (modelPath:dirs)) ++
+    rawSystem "ghc" $ "--make":"-hide-all-packages":((map ("-i"++) (modelPath':dirs)) ++
                                                    (beforeEach "-package" ("base":"ModML-Solver":packages)) ++
                                                    [solveFile])
     let binary = tmpdir </> (dropExtension solveFile)
