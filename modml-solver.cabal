@@ -33,6 +33,7 @@ executable csv-autosolver
   build-depends: base == 4.*,
                  parsec == 3.*,
                  filepath == 1.1.*,
+                 MissingH == 1.1.*,
                  directory == 1.0.*,
                  process == 1.0.*,
-                 cmdargs == 0.4.*
+                 cmdargs >= 0.4 && < 0.7
