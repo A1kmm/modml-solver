@@ -6,6 +6,10 @@ import qualified ModML.Core.BasicDAEModel as B
 import Data.List
 import Data.Ord
 import qualified Data.Map as M
+import System.Environment
+import Control.Monad
+import System.Directory
+import Debug.Trace
 
 -- TODO - Read solver params from command line, passed from autosolver...
 solverParams = return S.defaultSolverParameters
@@ -51,9 +55,11 @@ nameVariable model (v@(B.RealVariable id)) =
 displayOneRow r = undefined -- TODO
 
 csvMain model = do
+  print "In csvMain..."
   params <- solverParams
-  let res = S.modelToResults model params 
+  let res = S.modelToResults model params
+  print "Running simulation"
   case res
     of
       Left err -> print err
-      Right res -> displayResultsAsCSV model res
+      Right res -> trace "Trying to display results" $! displayResultsAsCSV model res

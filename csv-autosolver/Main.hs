@@ -13,6 +13,7 @@ import Control.Exception hiding (try)
 import Data.Maybe
 import System.Directory
 import System.IO
+import System.Environment
 
 data CSVSolve = CSVSolve { modelFile :: String, includedir :: [String]
                          }
@@ -88,7 +89,7 @@ csvAutoSolver (CSVSolve { modelFile = mf, includedir = dirs }) = do
          hPutStr hSolveFile (showCSVSolver modelModule "")
     -- Compile it...
     rawSystem "ghc" $ "--make":"-hide-all-packages":((map ("-i"++) (modelPath':dirs)) ++
-                                                   (beforeEach "-package" ("base":"ModML-Solver":packages)) ++
+                                                   (beforeEach "-package" ("base":"ModML-Core":"ModML-Solver":packages)) ++
                                                    [solveFile])
     let binary = tmpdir </> (dropExtension solveFile)
     rawSystem binary []
