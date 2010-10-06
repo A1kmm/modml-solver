@@ -57,8 +57,8 @@ levmarPath = otherProjectsPath </> "levmar-2.5"
 
 withTemporaryDirectory fp f = do
   ids <- forM [0..4] $ \_ -> (randomIO :: IO Int)
-  let tmppart = foldl' (\f n -> f . showString "-" . showHex n) id ids "tmp"
-  let fn = fp </> tmppart
+  let tmppart = foldl' (\f n -> f . showString "-" . showHex (abs n)) id ids "tmp"
+  let fn = fp </> (tail tmppart)
   bracket (createDirectory fn 448 >> return fn) removeDirectory f
 
 compileCodeGetResults params code = 
