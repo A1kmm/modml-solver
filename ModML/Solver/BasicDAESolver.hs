@@ -24,12 +24,13 @@ import Text.ParserCombinators.Parsec
 import qualified System.IO.Unsafe as S
 import qualified System.Process as S
 import System.FilePath
-import System.Posix.Directory
+import System.Directory
 import System.Process
 import System.Exit
 import Control.Exception
 import System.Random
 import Numeric
+import Paths_ModML_Solver
 
 data CodeGenerationError = OtherProblem String
 instance Error CodeGenerationError where strMsg s = OtherProblem s
@@ -51,15 +52,11 @@ data SolverParameters = SolverParameters {tStart :: Double,
                                           abstol :: Double }
 defaultSolverParameters = SolverParameters 0 1 0.1 10 1 1E-6 1E-6
 
-otherProjectsPath = "other-projects"
-sundialsPath = otherProjectsPath </> "sundials-2.4.0"
-levmarPath = otherProjectsPath </> "levmar-2.5"
-
 withTemporaryDirectory fp f = do
   ids <- forM [0..4] $ \_ -> (randomIO :: IO Int)
   let tmppart = foldl' (\f n -> f . showString "-" . showHex (abs n)) id ids "tmp"
   let fn = fp </> (tail tmppart)
-  bracket (createDirectory fn 448 >> return fn) removeDirectory f
+  bracket (createDirectory fn >> return fn) removeDirectoryRecursive f
 
 compileCodeGetResults params code = 
     withTemporaryDirectory "./" $ \dir ->
@@ -67,12 +64,9 @@ compileCodeGetResults params code =
         let codegenc = dir </> "codegen.c"
         let codegenx = dir </> "codegen"
         writeFile codegenc code
-        ret <- rawSystem "gcc" ["-O3", "-I", ".",
-                                "-I", levmarPath,
-                                "-L", levmarPath,
-                                "-I", sundialsPath </> "include",
-                                "-L", sundialsPath </> "src/nvec_ser/.libs/",
-                                "-L", sundialsPath </> "src/ida/.libs/",
+        dataIncludeDir <- liftM (takeDirectory . takeDirectory) $ getDataFileName "solver-support/SolverHead.h"
+        ret <- rawSystem "gcc" ["-O0", "-ggdb", "-I", ".",
+                                "-I", dataIncludeDir,
                                 codegenc, 
                                 "-lsundials_ida", "-lsundials_nvecserial", "-lm",
                                  "-llapack", "-llevmar",
@@ -101,6 +95,13 @@ makeCodeFor mod =
     let mod' = removeUnusedVariablesAndCSEs (simplifyDerivatives mod)
     let (varCount, varNumMap) = numberVariables (variables mod')
     let (paramNumMap, paramCount) = numberParameters mod'
+    let neqs = length (equations mod')
+    let nvars = length (variables mod')
+    when (neqs /= nvars) $
+       Left $
+         strMsg (showString "Number of state variables does not match number of equations: " .
+                 shows neqs . showString " equations, but " .
+                 shows nvars $ " variables.")
     return $ (varNumMap,
               "#include \"solver-support/SolverHead.h\"\n" ++
               (makeResFn mod' varNumMap) ++
