@@ -113,7 +113,7 @@ setup_parameters
 
   if (gNumParams > gNumEquations + gNumBoundaryEquations)
   {
-    handle_error(0, "Initial value solver", "model check", "More parameters at initial value than constrain available; unable to solve model.", NULL);
+    handle_error(0, "Initial value solver", "model check", "More parameters at initial value than constraints available; unable to solve model.", NULL);
   }
 
   dlevmar_dif(iv_sys_fn, params, NULL, gNumParams,
