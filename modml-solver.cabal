@@ -9,6 +9,7 @@ maintainer:           Andrew Miller <ak.miller@auckland.ac.nz>
 stability:            experimental
 synopsis:             Solvers for ModML models
 description:          Solvers for ModML models
+Data-Files: solver-support/SolverHead.h
 
 library
   hs-source-dirs:       .
@@ -26,6 +27,7 @@ library
                  random == 1.*,
                  containers == 0.3.*,
                  ModML-Core == 0.0.*
+  Other-Modules: Paths_ModML_Solver
 
 executable csv-autosolver
   hs-source-dirs: csv-autosolver
@@ -36,4 +38,7 @@ executable csv-autosolver
                  MissingH == 1.1.*,
                  directory == 1.0.*,
                  process == 1.0.*,
-                 cmdargs >= 0.4 && < 0.7
+                 cmdargs >= 0.4 && < 0.7,
+                 ghc >= 6.8 && < 6.13,
+                 ghc-paths == 0.1.*,
+                 dequeue == 0.1.*
