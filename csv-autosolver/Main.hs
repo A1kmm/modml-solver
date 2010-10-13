@@ -24,7 +24,10 @@ import qualified Data.Dequeue as DQ
 import MonadUtils
 import qualified Data.Map as M
 
-data CSVSolve = CSVSolve { modelFile :: String, debug :: Bool, includedir :: [String]
+data CSVSolve = CSVSolve { modelFile :: String, debug :: Bool, includedir :: [String],
+                           startTime :: Double, maxSolverStep :: Double, maxReportStep :: Double,
+                           endTime :: Double, showEveryStep :: Bool, relativeErrorTolerance :: Double,
+                           absoluteErrorTolerance :: Double
                          }
                   deriving (Show, Data, Typeable)
 
@@ -36,7 +39,21 @@ csvSolveArgs =
                includedir = def &=
                  help "Directories to search for includes" &=
                  explicit &= name "I" &=
-                 typDir
+                 typDir,
+               startTime = 0 &=
+                 help "The starting 'time' point" &= typ "REAL",
+               maxSolverStep = 1 &=
+                 help "The maximum solver step to take" &= typ "REAL",
+               maxReportStep = 0.1 &=
+                 help "The maximum 'time' between reports" &= typ "REAL",
+               endTime = 0 &=
+                 help "The ending 'time' point" &= typ "REAL",
+               showEveryStep = False &=
+                 help "Causes every internal step to be returned",
+               relativeErrorTolerance = 1E-6 &=
+                 help "The relative error tolerance" &= typ "REAL",
+               absoluteErrorTolerance = 1E-6 &=
+                 help "The absolute error tolerance" &= typ "REAL"
              }
 
 main = cmdArgs csvSolveArgs >>= csvAutoSolver
@@ -136,7 +153,7 @@ logOneName logInfoRef name mod =
                         else
                             withNew
 
-csvAutoSolver (CSVSolve { debug = dbg, modelFile = mf, includedir = dirs }) = do
+csvAutoSolver (args@CSVSolve { debug = dbg, modelFile = mf, includedir = dirs }) = do
   -- Work out what packages we need...
   packages <- liftM withRight $ parseFromFile extractPackages mf
   -- Get a name for the model...
@@ -160,7 +177,10 @@ csvAutoSolver (CSVSolve { debug = dbg, modelFile = mf, includedir = dirs }) = do
                                                              (beforeEach "-package" usePackages) ++
                                                              [solveFile])
             let binary = tmpdir </> (dropExtension solveFile)
-            rawSystem binary []
+            rawSystem binary ["1", show . startTime $ args, show . maxSolverStep $ args,
+                              show .  maxReportStep $ args, show . endTime $ args,
+                              show . showEveryStep $ args, show . relativeErrorTolerance $ args,
+                              show . absoluteErrorTolerance $ args]
             return ()
           True ->
               do
