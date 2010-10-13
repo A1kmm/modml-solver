@@ -97,7 +97,12 @@ double gtStart;
 static void
 iv_sys_fn(double *p, double *hx, int m, int n, void* dat)
 {
+  int i;
   boundaryResiduals(gtStart, p, hx);
+  // Saturate numbers to help numerical solver with NaNs etc...
+  for (i = 0; i < m; i++)
+    if (!isfinite(hx[i]) || hx[i] > 1E100)
+      hx[i] = 1E100;
 }
 
 static void
@@ -108,6 +113,8 @@ setup_parameters
  int reverseTranslate
 )
 {
+  int ret, i;
+
   if (reverseTranslate)
     reverseTranslateParams(y, yp, params);
 
@@ -116,9 +123,19 @@ setup_parameters
     handle_error(0, "Initial value solver", "model check", "More parameters at initial value than constraints available; unable to solve model.", NULL);
   }
 
-  dlevmar_dif(iv_sys_fn, params, NULL, gNumParams,
-              gNumEquations + gNumBoundaryEquations,
-              1000000, NULL, NULL, NULL, NULL, NULL);
+  // Sometimes dlevmar fails even when it makes useful progress, so we give it
+  // 10 chances to converge...
+  for (i = 0; i < 10; i++)
+  {
+    ret = dlevmar_dif(iv_sys_fn, params, NULL, gNumParams,
+                      gNumEquations + gNumBoundaryEquations,
+                      1000000, NULL, NULL, NULL, NULL, NULL);
+    if (ret >= 0)
+      break;
+  }
+  if (ret < 0)
+    handle_error(0, "Initial value solver", "Solve failed", "Couldn't find initial conditions.", NULL);
+
   translateParams(y, yp, params);
 }
 
@@ -143,8 +160,8 @@ do_ida_solve(double tStart, double tMaxSolverStep, double tMaxReportStep, double
   
   IDAInit(ida_mem, modelResiduals, tStart, y, yp);
   IDASStolerances(ida_mem, reltol, abstol);
-  IDASpgmr(ida_mem, 0);
-  // IDADense(ida_mem, imax(gNumVars, gNumEquations));
+  // IDASpgmr(ida_mem, 0);
+  IDADense(ida_mem, imax(gNumVars, gNumEquations));
   IDASetErrHandlerFn(ida_mem, handle_error, NULL);
   IDASetNoInactiveRootWarn(ida_mem);
   IDASetMaxStep(ida_mem, tMaxSolverStep);
