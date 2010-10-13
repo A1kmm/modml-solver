@@ -7,7 +7,14 @@ module ModML.Solver.BasicDAESolver
      SolverParameters (SolverParameters),
      defaultSolverParameters,
      modelToResults,
-     makeCodeFor
+     makeCodeFor,
+     tStart,
+     maxSolverStep,
+     maxReportStep,
+     tEnd,
+     showEveryStep,
+     reltol,
+     abstol
     )
 where
 

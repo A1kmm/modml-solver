@@ -10,8 +10,22 @@ import System.Environment
 import Control.Monad
 import System.Directory
 
--- TODO - Read solver params from command line, passed from autosolver...
-solverParams = return S.defaultSolverParameters
+solverParamsArgsOrDefault (ver:tStartStr:maxSolverStepStr:maxReportStepStr:tEndStr:showEveryStepStr:reltolStr:abstolStr:_) =
+    if ver /= "1"
+    then
+        error $ "Your installed ModML-Solver package is not compatible with your autosolver - try cabal install ModML-Solver"
+    else
+        S.SolverParameters { S.tStart = read tStartStr,
+                             S.maxSolverStep = read maxSolverStepStr,
+                             S.maxReportStep = read maxReportStepStr,
+                             S.tEnd = read tEndStr,
+                             S.showEveryStep = if (read showEveryStepStr) then 1.0 else 0.0,
+                             S.reltol = read reltolStr,
+                             S.abstol = read abstolStr
+                           }
+solverParamsArgsOrDefault _ = S.defaultSolverParameters
+
+solverParams = liftM solverParamsArgsOrDefault getArgs
 
 displayResultsAsCSV model (varMap, rows) =
     do
