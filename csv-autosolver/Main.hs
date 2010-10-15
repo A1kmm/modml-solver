@@ -46,7 +46,7 @@ csvSolveArgs =
                  help "The maximum solver step to take" &= typ "REAL",
                maxReportStep = 0.1 &=
                  help "The maximum 'time' between reports" &= typ "REAL",
-               endTime = 0 &=
+               endTime = 10 &=
                  help "The ending 'time' point" &= typ "REAL",
                showEveryStep = False &=
                  help "Causes every internal step to be returned",
