@@ -28,9 +28,13 @@ solverParamsArgsOrDefault _ = S.defaultSolverParameters
 solverParams = liftM solverParamsArgsOrDefault getArgs
 
 displayResultsAsCSV model (varMap, rows) =
-    do
-      putStrLn $ titleRow model varMap
-      displayRemainingRows rows
+    case (M.null varMap)
+      of
+        True -> putStrLn "No variables in model"
+        False ->
+            do
+              putStrLn $ titleRow model varMap
+              displayRemainingRows rows
 
 displayRemainingRows [] = return ()
 displayRemainingRows (r:rest) = do
