@@ -444,6 +444,8 @@ realExpressionToString vm rcem bcem (ATanh r1) =
 realExpressionToString vm rcem bcem (ACosh r1) =
     (showString "acosh("
       . showString (realExpressionToString vm rcem bcem r1)) ")"
+realExpressionToString vm rcem bcem (RealExpressionTag _ r) =
+    realExpressionToString vm rcem bcem r
 
 makeResiduals :: BasicDAEModel -> M.Map RealVariable Int -> M.Map RealCommonSubexpression String ->
                  M.Map BoolCommonSubexpression String -> String
