@@ -108,7 +108,9 @@ makeCodeFor mod =
        Left $
          strMsg (showString "Number of state variables does not match number of equations: " .
                  shows neqs . showString " equations, but " .
-                 shows nvars $ " variables.")
+                 shows nvars . showString " variables: Variable IDs present: " .
+                 (shows $ map variableId $ variables mod') .
+                 showString "; Equations: " . shows (equations mod') $ "")
     return $ (varNumMap,
               "#include \"solver-support/SolverHead.h\"\n" ++
               (makeResFn mod' varNumMap) ++
