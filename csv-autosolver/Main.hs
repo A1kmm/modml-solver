@@ -15,6 +15,7 @@ import System.Directory
 import System.IO
 import System.Environment
 import Data.IORef
+{-
 import GHC
 import FastString
 import qualified GHC.Paths as GHCP
@@ -22,9 +23,11 @@ import qualified Outputable as O
 import qualified DynFlags as GHCDF
 import qualified Data.Dequeue as DQ
 import MonadUtils
+-}
 import qualified Data.Map as M
+import Control.Monad
 
-data CSVSolve = CSVSolve { modelFile :: String, debug :: Bool, includedir :: [String],
+data CSVSolve = CSVSolve { modelFile :: String, {- debug :: Bool, -} intermediateC :: Bool, includedir :: [String],
                            startTime :: Double, maxSolverStep :: Double, maxReportStep :: Double,
                            endTime :: Double, showEveryStep :: Bool, relativeErrorTolerance :: Double,
                            absoluteErrorTolerance :: Double
@@ -34,8 +37,12 @@ data CSVSolve = CSVSolve { modelFile :: String, debug :: Bool, includedir :: [St
 csvSolveArgs =
     CSVSolve { modelFile = def &= argPos 0 &=
                  typ "MODELFILE",
+               {-
                debug = def &=
                  help "Steps through your model to help track down exceptions",
+                -}
+               intermediateC = def &=
+                 help "Shows the intermediate C code used to generate results",
                includedir = def &=
                  help "Directories to search for includes" &=
                  explicit &= name "I" &=
@@ -86,12 +93,12 @@ commentMaybePackage =
          liftM Just $ liftM2 (:) alphaNum $ many (alphaNum <|> char '_' <|> char '-')
        ) <|> (manyTill anyChar whitespaceBreaking >> return Nothing)
 
-showCSVSolver modelModule =
+showCSVSolver modelModule dumpIntermediate =
     showString "import " .
     showString modelModule .
     showString "\n\
                \import ModML.Solver.CSVSolver\n\
-               \main = csvMain model"
+               \main = csvMain model " . shows dumpIntermediate
 
 intermix :: [a] -> [a] -> [a]
 intermix [] _ = []
@@ -109,6 +116,7 @@ whileM m = do
       False -> return ()
       True -> whileM m
 
+{-
 debugAnException :: MonadIO m => IORef (M.Map FastString (DQ.BankersDequeue SrcSpan)) -> SomeException -> m ()
 debugAnException logInfoRef ex =
   liftIO $ do
@@ -152,8 +160,10 @@ logOneName logInfoRef name mod =
                             snd . DQ.popFront $ withNew
                         else
                             withNew
+-}
 
-csvAutoSolver (args@CSVSolve { debug = dbg, modelFile = mf, includedir = dirs }) = do
+csvAutoSolver (args@CSVSolve { {- debug = dbg, -} intermediateC = dumpc, modelFile = mf, includedir = dirs }) = do
+  let dbg = False
   -- Work out what packages we need...
   packages <- liftM withRight $ parseFromFile extractPackages mf
   -- Get a name for the model...
@@ -168,7 +178,7 @@ csvAutoSolver (args@CSVSolve { debug = dbg, modelFile = mf, includedir = dirs })
       let solveFile = dirname </> "SolveAsCSV.hs"
       withFile solveFile WriteMode $ \hSolveFile ->
         -- Write the model...
-        hPutStr hSolveFile (showCSVSolver modelModule "")
+        hPutStr hSolveFile (showCSVSolver modelModule dumpc "")
       -- Compile it...
       case dbg
         of
@@ -182,7 +192,8 @@ csvAutoSolver (args@CSVSolve { debug = dbg, modelFile = mf, includedir = dirs })
                               show . showEveryStep $ args, show . relativeErrorTolerance $ args,
                               show . absoluteErrorTolerance $ args]
             return ()
-          True ->
+          True -> undefined
+          {-
               do
                 runGhc (Just GHCP.libdir) $ do
                   dflags <- getSessionDynFlags
@@ -207,3 +218,4 @@ csvAutoSolver (args@CSVSolve { debug = dbg, modelFile = mf, includedir = dirs })
                         RunException e -> (debugAnException loggedInfoRef e) >> (return False)
                         RunBreak _ _ _ -> (logBreakpoint loggedInfoRef) >> (return True)
                 return ()
+          -}

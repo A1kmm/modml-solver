@@ -17,15 +17,15 @@ library
     ModML.Solver.BasicDAESolver
     ModML.Solver.CSVSolver
   build-depends: base ==4.*,
-                 process ==1.0.*,
+                 process ==1.*,
                  unix == 2.4.*,
-                 filepath == 1.1.*,
+                 filepath == 1.*,
                  parsec == 3.*,
-                 mtl == 1.1.*,
+                 mtl >= 1 && < 3,
                  typehash == 1.*,
-                 syb == 0.1.*,
+                 syb >= 0.1 && < 0.3,
                  random == 1.*,
-                 containers == 0.3.*,
+                 containers >= 0.3 && < 0.5,
                  ModML-Core == 0.0.*
   Other-Modules: Paths_ModML_Solver
 
@@ -34,11 +34,11 @@ executable csv-autosolver
   Main-Is: Main.hs
   build-depends: base == 4.*,
                  parsec == 3.*,
-                 filepath == 1.1.*,
-                 MissingH == 1.1.*,
-                 directory == 1.0.*,
-                 process == 1.0.*,
-                 cmdargs >= 0.4 && < 0.7,
-                 ghc >= 6.8 && < 6.13,
-                 ghc-paths == 0.1.*,
-                 dequeue == 0.1.*
+                 filepath == 1.*,
+                 MissingH == 1.*,
+                 directory == 1.*,
+                 process == 1.*,
+                 cmdargs >= 0.4 && < 0.7
+                 -- dequeue == 0.1.*,
+                 -- ghc >= 6.8 && < 8,
+                 -- ghc-paths == 0.1.*,
