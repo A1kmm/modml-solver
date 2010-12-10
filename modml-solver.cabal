@@ -16,6 +16,7 @@ library
   exposed-modules:
     ModML.Solver.BasicDAESolver
     ModML.Solver.CSVSolver
+  ghc-prof-options: -prof -auto-all -caf-all
   build-depends: base ==4.*,
                  process ==1.*,
                  unix == 2.4.*,

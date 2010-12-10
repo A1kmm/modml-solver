@@ -27,7 +27,9 @@ import MonadUtils
 import qualified Data.Map as M
 import Control.Monad
 
-data CSVSolve = CSVSolve { modelFile :: String, {- debug :: Bool, -} intermediateC :: Bool, includedir :: [String],
+data CSVSolve = CSVSolve { modelFile :: String, {- debug :: Bool, -} intermediateC :: Bool,
+                           profile :: Bool,
+                           includedir :: [String],
                            startTime :: Double, maxSolverStep :: Double, maxReportStep :: Double,
                            endTime :: Double, showEveryStep :: Bool, relativeErrorTolerance :: Double,
                            absoluteErrorTolerance :: Double
@@ -43,6 +45,8 @@ csvSolveArgs =
                 -}
                intermediateC = def &=
                  help "Shows the intermediate C code used to generate results",
+               profile = def &=
+                 help "Sets up the generated program for profiling",
                includedir = def &=
                  help "Directories to search for includes" &=
                  explicit &= name "I" &=
@@ -162,7 +166,7 @@ logOneName logInfoRef name mod =
                             withNew
 -}
 
-csvAutoSolver (args@CSVSolve { {- debug = dbg, -} intermediateC = dumpc, modelFile = mf, includedir = dirs }) = do
+csvAutoSolver (args@CSVSolve { {- debug = dbg, -} intermediateC = dumpc, profile = prof, modelFile = mf, includedir = dirs }) = do
   let dbg = False
   -- Work out what packages we need...
   packages <- liftM withRight $ parseFromFile extractPackages mf
@@ -183,14 +187,22 @@ csvAutoSolver (args@CSVSolve { {- debug = dbg, -} intermediateC = dumpc, modelFi
       case dbg
         of
           False ->  do
-            rawSystem "ghc" $ "--make":"-hide-all-packages":((map ("-i"++) includePaths) ++
+            let profRtsOpts = if prof then ["+RTS", "-p"] else []
+            rawSystem "ghc" $ ("--make":"-hide-all-packages":((map ("-i"++) includePaths) ++
                                                              (beforeEach "-package" usePackages) ++
-                                                             [solveFile])
+                                                             [solveFile]))
+            when prof $ do
+              rawSystem "ghc" $ ("--make":"-hide-all-packages":
+                                 "-prof":"-auto-all":"-caf-all":"-rtsopts":
+                                 "-osuf":"p_o":((map ("-i"++) includePaths) ++
+                                           (beforeEach "-package" usePackages) ++
+                                           [solveFile]))
+              return ()
             let binary = tmpdir </> (dropExtension solveFile)
-            rawSystem binary ["1", show . startTime $ args, show . maxSolverStep $ args,
-                              show .  maxReportStep $ args, show . endTime $ args,
-                              show . showEveryStep $ args, show . relativeErrorTolerance $ args,
-                              show . absoluteErrorTolerance $ args]
+            rawSystem binary $ ["1", show . startTime $ args, show . maxSolverStep $ args,
+                                show .  maxReportStep $ args, show . endTime $ args,
+                                show . showEveryStep $ args, show . relativeErrorTolerance $ args,
+                                show . absoluteErrorTolerance $ args] ++ profRtsOpts
             return ()
           True -> undefined
           {-

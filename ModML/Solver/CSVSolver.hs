@@ -10,6 +10,12 @@ import System.Environment
 import Control.Monad
 import System.Directory
 
+data SensitivityVariable = SensitivityVariable { sensitivityVariableName :: String,
+                                                 sensitivityRange :: (Double, Double),
+                                                 sensitivityStep :: Double
+                                               }
+data AnalysisType = UniformTimeCourse | SensitivityAnalysis { sensistivityVariables :: [SensitivityVariable] }
+
 solverParamsArgsOrDefault (ver:tStartStr:maxSolverStepStr:maxReportStepStr:tEndStr:showEveryStepStr:reltolStr:abstolStr:_) =
     if ver /= "1"
     then
@@ -21,7 +27,8 @@ solverParamsArgsOrDefault (ver:tStartStr:maxSolverStepStr:maxReportStepStr:tEndS
                              S.tEnd = read tEndStr,
                              S.showEveryStep = if (read showEveryStepStr) then 1.0 else 0.0,
                              S.reltol = read reltolStr,
-                             S.abstol = read abstolStr
+                             S.abstol = read abstolStr,
+                             S.variableOverrides = []
                            }
 solverParamsArgsOrDefault _ = S.defaultSolverParameters
 
@@ -85,10 +92,19 @@ displayOneRow r =
       S.Success -> ""
       S.Result (t, lr, lr') -> intercalate "," $ (show t):((map show lr) ++ (map show lr'))
 
-csvMain model = do
-  params <- solverParams
-  let res = S.modelToResults model params
-  case res
+csvMain model dumpIntermediate dropConstraints =
+  if dumpIntermediate
+  then
+    case S.makeCodeFor model 0
     of
-      Left err -> print err
-      Right res -> displayResultsAsCSV model res
+        Left _ -> return ()
+        Right (_, code) -> putStrLn code
+  else
+    do
+      params <- solverParams
+      let res = S.modelToResults model [params]
+      case res
+        of
+          Left err -> print err
+          Right res -> displayResultsAsCSV model res
+
