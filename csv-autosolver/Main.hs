@@ -15,15 +15,6 @@ import System.Directory
 import System.IO
 import System.Environment
 import Data.IORef
-{-
-import GHC
-import FastString
-import qualified GHC.Paths as GHCP
-import qualified Outputable as O
-import qualified DynFlags as GHCDF
-import qualified Data.Dequeue as DQ
-import MonadUtils
--}
 import qualified Data.Map as M
 import Control.Monad
 
@@ -39,10 +30,6 @@ data CSVSolve = CSVSolve { modelFile :: String, {- debug :: Bool, -} intermediat
 csvSolveArgs =
     CSVSolve { modelFile = def &= argPos 0 &=
                  typ "MODELFILE",
-               {-
-               debug = def &=
-                 help "Steps through your model to help track down exceptions",
-                -}
                intermediateC = def &=
                  help "Shows the intermediate C code used to generate results",
                profile = def &=
@@ -120,53 +107,7 @@ whileM m = do
       False -> return ()
       True -> whileM m
 
-{-
-debugAnException :: MonadIO m => IORef (M.Map FastString (DQ.BankersDequeue SrcSpan)) -> SomeException -> m ()
-debugAnException logInfoRef ex =
-  liftIO $ do
-    putStrLn "There was an uncaught exception running the model:"
-    putStrLn "Breakdown of last steps in each module:"
-    logInfo <- readIORef logInfoRef
-    forM_ (M.toList logInfo) $ \(mod, dqSteps) -> do
-        putStrLn $ showString "=== " . shows mod $ " ==="
-        forM_ (DQ.takeFront histKeep dqSteps) $ \histspan ->
-            print $ O.ppr histspan O.defaultUserStyle
-    putStrLn "Exception follows:"
-    throw ex
-
-histKeep = 30
-
-allCombined = (mkFastString "All Combined")
-logBreakpoint :: GhcMonad m => IORef (M.Map FastString (DQ.BankersDequeue SrcSpan)) -> m ()
-logBreakpoint logInfoRef = do
-  span <- liftM resumeSpan $ liftM head getResumeContext
-  logOneName logInfoRef span $! srcSpanFile span
-  logOneName logInfoRef span allCombined
-  return ()
-
-logOneName logInfoRef name mod =
-    liftIO $ modifyIORef logInfoRef $ (flip M.alter mod) $ \oldhist ->
-        Just $
-          case oldhist
-            of
-              Nothing -> DQ.fromList [name]
-              Just oldhist' ->
-                  let
-                      lastHist = fromMaybe undefined (DQ.last oldhist')
-                      withNew = DQ.pushBack oldhist' name
-                  in
-                    if lastHist == name
-                    then
-                        oldhist'
-                    else
-                        if DQ.length oldhist' >= histKeep
-                        then
-                            snd . DQ.popFront $ withNew
-                        else
-                            withNew
--}
-
-csvAutoSolver (args@CSVSolve { {- debug = dbg, -} intermediateC = dumpc, profile = prof, modelFile = mf, includedir = dirs }) = do
+csvAutoSolver (args@CSVSolve { intermediateC = dumpc, profile = prof, modelFile = mf, includedir = dirs }) = do
   let dbg = False
   -- Work out what packages we need...
   packages <- liftM withRight $ parseFromFile extractPackages mf
@@ -205,29 +146,3 @@ csvAutoSolver (args@CSVSolve { {- debug = dbg, -} intermediateC = dumpc, profile
                                 show . absoluteErrorTolerance $ args] ++ profRtsOpts
             return ()
           True -> undefined
-          {-
-              do
-                runGhc (Just GHCP.libdir) $ do
-                  dflags <- getSessionDynFlags
-                  setSessionDynFlags (dflags {ghcMode = CompManager,
-                                              ghcLink = LinkInMemory, hscTarget = HscInterpreted,
-                                              includePaths = includePaths,
-                                              packageFlags = GHCDF.packageFlags dflags ++ (map GHCDF.ExposePackage usePackages),
-                                              flags = GHCDF.Opt_HideAllPackages:(GHCDF.flags dflags)})
-                  target <- guessTarget solveFile Nothing
-                  setTargets [target]
-                  load LoadAllTargets
-                  mainMod <- findModule (mkModuleName "Main") Nothing
-                  setContext [mainMod] []
-                  loggedInfoRef <- liftIO $ newIORef M.empty
-                  runStmt "main" SingleStep
-                  whileM $ do
-                    res <- resume (const True) SingleStep
-                    case res
-                      of
-                        RunOk _ -> return False
-                        RunFailed -> (liftIO $ putStrLn "Compilation failed - see above") >> (return False)
-                        RunException e -> (debugAnException loggedInfoRef e) >> (return False)
-                        RunBreak _ _ _ -> (logBreakpoint loggedInfoRef) >> (return True)
-                return ()
-          -}
