@@ -22,7 +22,8 @@ import qualified ModML.Core.BasicDAEModel as B
 import qualified ModML.Solver.CSVSolver as S
 import qualified ModML.Solver.BasicDAESolver as S
 
-data CSVSolve = CSVSolve { modelFile :: String, intermediateC :: Bool,
+data CSVSolve = CSVSolve { modelFile :: String, csvOutFile :: Maybe String,
+                           intermediateC :: Bool,
                            profile :: Bool,
                            includedir :: [String],
                            startTime :: Double, maxSolverStep :: Double, maxReportStep :: Double,
@@ -37,6 +38,8 @@ data CSVSolve = CSVSolve { modelFile :: String, intermediateC :: Bool,
 csvSolveArgs =
     CSVSolve { modelFile = def &= argPos 0 &=
                  typ "MODELFILE",
+               csvOutFile = Nothing &=
+                 typ "FILENAME",
                intermediateC = def &=
                  help "Shows the intermediate C code used to generate results",
                profile = def &=
@@ -103,7 +106,7 @@ commentMaybePackage =
          liftM Just $ liftM2 (:) alphaNum $ many (alphaNum <|> char '_' <|> char '-')
        ) <|> (manyTill anyChar whitespaceBreaking >> return Nothing)
 
-showCSVSolver modelModule (CSVSolve { intermediateC = intermediateC,
+showCSVSolver modelModule (CSVSolve { intermediateC = intermediateC, csvOutFile = csvOutFile,
                               startTime = startTime, maxSolverStep = maxSolverStep,
                               maxReportStep = maxReportStep, endTime = endTime,
                               showEveryStep = showEveryStep, relativeErrorTolerance = relativeErrorTolerance,
@@ -136,7 +139,7 @@ showCSVSolver modelModule (CSVSolve { intermediateC = intermediateC,
     shows transformations .
     showString ") (" .
     shows (params, analysis) .
-    showString ")\n"
+    showString ") (" . shows csvOutFile . showString ")\n"
 
 intermix :: [a] -> [a] -> [a]
 intermix [] _ = []

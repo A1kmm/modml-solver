@@ -9,6 +9,7 @@ import qualified Data.Map as M
 import System.Environment
 import Control.Monad
 import ModML.Solver.ModelTransformations
+import System.IO
 
 data SensitivityVariable = SensitivityVariable { sensitivityVariableName :: String,
                                                  sensitivityRange :: (Double, Double),
@@ -17,37 +18,37 @@ data SensitivityVariable = SensitivityVariable { sensitivityVariableName :: Stri
 data AnalysisType = UniformTimeCourse | SensitivityAnalysis { sensistivityVariables :: [SensitivityVariable] }
                     deriving (Eq, Ord, Show)
 
-displayUniformTimeCourseResultsAsCSV model (varMap, rows) =
+displayUniformTimeCourseResultsAsCSV model (varMap, rows) hOut =
     case (M.null varMap)
       of
         True -> putStrLn "No variables in model"
         False ->
             do
-              putStrLn $ titleRow ("Time":) model varMap
-              displayRemainingRows rows
+              hPutStrLn hOut $ titleRow ("Time":) model varMap
+              displayRemainingRows rows hOut
 
-displaySensitivityAnalysisResultsAsCSV sa model (varMap, rows) =
+displaySensitivityAnalysisResultsAsCSV sa model (varMap, rows) hOut =
     case (M.null varMap)
       of
         True -> putStrLn "No variables in model"
         False ->
           do
-            putStrLn $ titleRow id model varMap
-            displayRemainingLastRows rows
+            hPutStrLn hOut $ titleRow id model varMap
+            displayRemainingLastRows rows hOut
             
-displayRemainingRows [] = return ()
-displayRemainingRows (r:rest) = do
-  putStrLn $ displayOneRow r
-  displayRemainingRows rest
+displayRemainingRows [] _ = return ()
+displayRemainingRows (r:rest) hOut = do
+  hPutStrLn hOut $ displayOneRow r
+  displayRemainingRows rest hOut
 
-displayRemainingLastRows [] = return ()
-displayRemainingLastRows (S.Result (_, v, dv):S.Success:rest) = do
-  putStrLn $ displayOneSensitivityRow v dv
-  displayRemainingLastRows rest
-displayRemainingLastRows ((r@(S.Result _)):rest) = displayRemainingLastRows rest
-displayRemainingLastRows (r:rest) = do
-  putStrLn $ displayOneRow r
-  displayRemainingRows rest
+displayRemainingLastRows [] _ = return ()
+displayRemainingLastRows (S.Result (_, v, dv):S.Success:rest) hOut = do
+  hPutStrLn hOut $ displayOneSensitivityRow v dv
+  displayRemainingLastRows rest hOut
+displayRemainingLastRows ((r@(S.Result _)):rest) hOut = displayRemainingLastRows rest hOut
+displayRemainingLastRows (r:rest) hOut = do
+  hPutStrLn hOut $ displayOneRow r
+  displayRemainingRows rest hOut
 
 withFst :: (a -> b) -> (a, c) -> (b, c)
 withFst f (a, c) = (f a, c)
@@ -108,27 +109,31 @@ buildOneSensitivityParam model paramList (SensitivityVariable { sensitivityVaria
       concatMap (\p -> [p { S.variableOverrides = (v, val):(S.variableOverrides p)} |
                         val <- [sensLow,(sensLow + sensStep)..sensHigh]]) paramList      
 
-doRequest False model paramList resHandler =
+doRequest writeFn False model paramList resHandler =
   case S.modelToResults model paramList
   of
     Left err -> print err
-    Right res -> resHandler model res
+    Right res ->
+      case writeFn
+        of
+          Nothing -> resHandler model res stdin
+          Just fn -> withFile fn WriteMode (resHandler model res)
     
-doRequest True model paramList _ =
+doRequest _ True model paramList _ =
   case S.makeCodeFor model paramList
   of
     Left err -> print err
     Right (_, _, code) -> putStrLn code
 
-handleRequest dumpInt model (params, UniformTimeCourse) =
-  doRequest dumpInt model [params] displayUniformTimeCourseResultsAsCSV
+handleRequest dumpInt model (params, UniformTimeCourse) writeTo =
+  doRequest writeTo dumpInt model [params] displayUniformTimeCourseResultsAsCSV
     
-handleRequest dumpInt model (params, SensitivityAnalysis sa) = 
-  doRequest dumpInt model (buildSensitivityParams model params sa) (displaySensitivityAnalysisResultsAsCSV sa)
+handleRequest dumpInt model (params, SensitivityAnalysis sa) writeTo = 
+  doRequest writeTo dumpInt model (buildSensitivityParams model params sa) (displaySensitivityAnalysisResultsAsCSV sa)
     
-csvMain model dumpIntermediate transformations request = -- trace (showString "Original # of variables = " . shows (length . B.variables $ model) . showString ", # of eqns = "  . shows (length . B.equations $ model) . showString ", # of boundary eqns = " . shows (length . B.boundaryEquations $ model) $ "") $
+csvMain model dumpIntermediate transformations request writeTo = -- trace (showString "Original # of variables = " . shows (length . B.variables $ model) . showString ", # of eqns = "  . shows (length . B.equations $ model) . showString ", # of boundary eqns = " . shows (length . B.boundaryEquations $ model) $ "") $
   let
     model' = applyTransformations model transformations
   in
    -- trace (showString "New # of variables = " . shows (length . B.variables $ model') . showString ", # of eqns = "  . shows (length . B.equations $ model') . showString ", # of boundary eqns = " . shows (length . B.boundaryEquations $ model') $ "") $
-     handleRequest dumpIntermediate model' request
+     handleRequest dumpIntermediate model' request writeTo
