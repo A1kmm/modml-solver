@@ -30,18 +30,21 @@ import Data.Generics
 import Control.Monad.State
 import Data.Maybe
 import Text.ParserCombinators.Parsec
+import qualified System.IO as S
 import qualified System.IO.Unsafe as S
 import qualified System.Process as S
 import System.FilePath
-import System.Directory
 import System.Process
 import System.Exit
-import Control.Exception
+import qualified Control.Exception as S
 import System.Random
 import Numeric
 import Paths_ModML_Solver
 import Data.Ord
 import Data.Maybe
+import System.Directory
+import Control.Concurrent
+import Control.Concurrent.MVar
 
 data CodeGenerationError = OtherProblem String
 instance Error CodeGenerationError where strMsg s = OtherProblem s
@@ -54,7 +57,7 @@ data IntegrationResult = FatalError (Int, String, String, String) |
                          Result (Double, [Double], [Double]) |
                          Success deriving (Show, Read)
 
-data SolverParameters =
+data SolverParameters a =
   SolverParameters {tStart :: Double,
                     maxSolverStep :: Double,
                     maxReportStep :: Double,
@@ -62,17 +65,54 @@ data SolverParameters =
                     showEveryStep :: Double,
                     reltol :: Double,
                     abstol :: Double, 
-                    variableOverrides :: [(Int, Double)]
+                    variableOverrides :: [(a, Double)]
                    } deriving (Eq, Ord, Show)
+
 defaultSolverParameters = SolverParameters 0 1 0.1 10 1 1E-6 1E-6 []
 
 withTemporaryDirectory fp f = do
   ids <- forM [0..4] $ \_ -> (randomIO :: IO Int)
   let tmppart = foldl' (\f n -> f . showString "-" . showHex (abs n)) id ids "tmp"
   let fn = fp </> (tail tmppart)
-  bracket (createDirectory fn >> return fn) removeDirectoryRecursive f
+  S.bracket (createDirectory fn >> return fn) removeDirectoryRecursive f
 
-compileCodeGetResults :: [SolverParameters] -> String -> IO (Either CodeGenerationError [IntegrationResult])
+robustReadProcessWithExitCode
+    :: FilePath                 -- ^ command to run
+    -> [String]                 -- ^ any arguments
+    -> String                   -- ^ standard input
+    -> IO (ExitCode,String,String) -- ^ exitcode, stdout, stderr
+robustReadProcessWithExitCode cmd args input = do
+    (Just inh, Just outh, Just errh, pid) <-
+        createProcess (proc cmd args){ std_in  = CreatePipe,
+                                       std_out = CreatePipe,
+                                       std_err = CreatePipe }
+
+    outMVar <- newEmptyMVar
+
+    -- fork off a thread to start consuming stdout
+    out  <- S.hGetContents outh
+    _ <- forkIO $ S.evaluate (length out) >> putMVar outMVar ()
+
+    -- fork off a thread to start consuming stderr
+    err  <- S.hGetContents errh
+    _ <- forkIO $ S.evaluate (length err) >> putMVar outMVar ()
+
+    -- now write and flush any input
+    when (not (null input)) $ S.handle ((\e -> return ()) :: (S.IOException -> IO ())) $
+      do S.hPutStr inh input; S.hFlush inh
+    S.hClose inh -- done with stdin
+
+    -- wait on the output
+    takeMVar outMVar
+    takeMVar outMVar
+    S.hClose outh
+
+    -- wait on the process
+    ex <- waitForProcess pid
+
+    return (ex, out, err)
+
+compileCodeGetResults :: [SolverParameters (Int, Int, Int)] -> String -> IO (Either CodeGenerationError [IntegrationResult])
 compileCodeGetResults params code = 
     withTemporaryDirectory "./" $ \dir ->
       do
@@ -89,28 +129,38 @@ compileCodeGetResults params code =
         case ret
           of
             ExitFailure _ -> return $ Left (strMsg "Model doesn't compile")
-            ExitSuccess ->
+            ExitSuccess -> -- trace (show params) $
                 do
-                  (_, inp, _) <- readProcessWithExitCode codegenx
+                  (_, inp, _) <- robustReadProcessWithExitCode codegenx
                                   [] (show params)
                   return (return (read inp))
 
-modelToResults :: BasicDAEModel -> [SolverParameters] -> AllowCodeGenError (M.Map RealVariable Int, [IntegrationResult])
+lookupOverrideVariables :: M.Map RealVariable Int -> M.Map RealExpression Int ->
+                           SolverParameters RealVariable -> SolverParameters (Int, Int, Int)
+lookupOverrideVariables varmap parammap params =
+  params { variableOverrides = flip mapMaybe (variableOverrides params) $ \(var, val) ->
+            liftM (\var' -> (var', val)) $ liftM3 (,,) (M.lookup var varmap) (M.lookup (RealVariableE var) parammap)
+                                                       (Just . fromMaybe (-1) $ M.lookup (Derivative (RealVariableE var)) parammap)
+         }
+
+modelToResults :: BasicDAEModel -> [SolverParameters RealVariable] -> AllowCodeGenError (M.Map RealVariable Int, [IntegrationResult])
 modelToResults mod [] = return (M.empty, [])
 modelToResults mod params@((SolverParameters { variableOverrides = l}):_) =
+   -- trace (show ("modelToResults params = ", params)) $   
     do
-        (varmap, code) <- makeCodeFor mod (length l)
-        res <- S.unsafePerformIO $ compileCodeGetResults params code
+        (varmap, parammap, code) <- makeCodeFor mod params
+        res <- S.unsafePerformIO $ compileCodeGetResults (map (lookupOverrideVariables varmap parammap) params) code
         return (varmap, res)
 
-makeCodeFor :: BasicDAEModel -> Int -> AllowCodeGenError (M.Map RealVariable Int, String)
-makeCodeFor mod overrides =
+makeCodeFor :: BasicDAEModel -> [SolverParameters RealVariable] -> AllowCodeGenError (M.Map RealVariable Int, M.Map RealExpression Int, String)
+makeCodeFor mod ((SolverParameters {variableOverrides = overrides}):_) =
   do
     let mod' = removeUnusedVariablesAndCSEs (simplifyDerivatives (simplifyMaths mod))
     let (varCount, varNumMap) = numberVariables (variables mod')
-    let (paramNumMap, paramCount) = numberParameters mod'
+    let overridenVariables = map fst overrides
+    let (paramNumMap, paramCount) = numberParameters mod' overridenVariables
     let neqs = length (equations mod')
-    let nvars = length (variables mod') - overrides
+    let nvars = length (variables mod') - (length overrides)
     when (neqs /= nvars) $
        Left $
          strMsg (showString "Number of state variables does not match number of equations: " .
@@ -118,11 +168,11 @@ makeCodeFor mod overrides =
                  shows nvars . showString " variables: Variable IDs present: " .
                  (shows $ map variableId $ variables mod') .
                  showString "; Equations: " . shows (equations mod') $ "")
-    return $ (varNumMap,
+    return $ (varNumMap, paramNumMap,
               (showString "#include \"solver-support/SolverHead.h\"\n" .
                 (makeResFn mod' varNumMap) .
                 (makeJacFn mod' varNumMap) .
-                (makeBoundaryAssignmentFn mod' paramNumMap) .
+                (makeBoundaryAssignmentFn mod' varNumMap overridenVariables) .
                 (makeBoundaryResFn mod' paramNumMap) .
                 (makeTranslateParams varNumMap paramNumMap) .
                 (makeRootFn mod' varNumMap) .
@@ -203,11 +253,11 @@ expressionToComputationTarget _ = Nothing
 -- | with the constraint that a value can only appear if the all dependencies
 -- | in the set (first element of value pair) are 'resolved' by an earler
 -- | occurrence of the map key.
-resolveDependencySet :: (Ord a, Ord v) => M.Map a (S.Set a, v) -> [v]
-resolveDependencySet m =
+resolveDependencySet :: (Ord a, Ord v) => M.Map a (S.Set a, v) -> S.Set a -> [v]
+resolveDependencySet m already =
   let
     (_, rl) = foldl' (\(seen, l) item ->
-                       fst $ resolveDependenciesFor m seen item l) (S.empty, []) (M.toList m)
+                       fst $ resolveDependenciesFor m seen item l) (already, []) (M.toList m)
   in
    reverse rl
 
@@ -233,9 +283,9 @@ resolveOneDependency m ((seen, l), success) dep =
       Nothing -> ((seen, l), False)
       Just item -> resolveDependenciesFor m seen (dep, item) l
 
-findSimpleInitialisation mod nameMap cseNo0 realCSEMap0 boolCSEMap0 eqset =
+findSimpleInitialisation mod nameMap cseNo0 realCSEMap0 boolCSEMap0 eqset overridenvars =
   let
-    ordeq = resolveDependencySet eqset
+    ordeq = resolveDependencySet eqset overridenvars
     (_, _, _, ss) =
       foldl' (\(cseNo, realCSEMap, boolCSEMap, sh) (lhs, rhs) ->
                let
@@ -260,8 +310,10 @@ findSimpleInitialisation mod nameMap cseNo0 realCSEMap0 boolCSEMap0 eqset =
   in
    ss
   
-findSimpleInitialisations nameMap mod =
+findSimpleInitialisations nameMap mod overridenvars =
   let
+    overridenvarsset = (S.fromList (map VariableCT overridenvars)) `S.union`
+                       (S.fromList (map DerivativeCT overridenvars))
     eqsets = buildEquationSetsForCondition mod
     conds = map fst eqsets
     usedRealCSEs = everything S.union (S.empty `mkQ` findOneUsedRealCSE) conds
@@ -275,13 +327,13 @@ findSimpleInitialisations nameMap mod =
        in
         s . showString "if (" . boolExpressionToString undefined realCSEMap boolCSEMap cond .
         showString ")\n\
-        \{\n" . findSimpleInitialisation mod nameMap cseNo' realCSEMap boolCSEMap eqset .
+        \{\n" . findSimpleInitialisation mod nameMap cseNo' realCSEMap boolCSEMap eqset overridenvarsset .
         showString "}\n") id eqsets)
     
-makeBoundaryAssignmentFn mod varNumMap =
-  showString "void boundaryAssignment(double t, double* params)\n\
+makeBoundaryAssignmentFn mod varNumMap overridenVars =
+  showString "void boundaryAssignment(double t, double* v, double* dv)\n\
              \{\n" .
-  findSimpleInitialisations (paramDisplay varNumMap) mod .
+  findSimpleInitialisations (variableOrDerivDisplay varNumMap) mod overridenVars .
   showString "}\n"
 
 makeTranslateParams varNumMap paramNumMap =
@@ -318,9 +370,9 @@ reverseTranslateOneParamVar n varNumMap v paramNo =
   showString "params[" . shows paramNo . showString "] = " . showString n .
   showString "[" . shows ((M.!) varNumMap v) . showString "];\n"
 
-numberParameters :: BasicDAEModel -> (M.Map RealExpression Int, Int)
-numberParameters mod =
-  execState (everywhereM (mkM numberOneParameter) mod) (M.empty, 0)
+numberParameters :: BasicDAEModel -> [RealVariable] -> (M.Map RealExpression Int, Int)
+numberParameters mod overrides =
+  execState (everywhereM (mkM numberOneParameter) (mod, map (Derivative . RealVariableE) overrides)) (M.empty, 0)
 
 insertExpression e = do
   (paramNumMap, nextNum) <- get
@@ -332,6 +384,7 @@ insertExpression e = do
 
 numberOneParameter (e@(Derivative (RealVariableE _))) = insertExpression e
 numberOneParameter e@(RealVariableE _) = insertExpression e
+  
 numberOneParameter e = return e
 
 makeVarId mod =

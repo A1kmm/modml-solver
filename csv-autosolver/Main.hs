@@ -14,16 +14,23 @@ import Data.Maybe
 import System.Directory
 import System.IO
 import System.Environment
-import Data.IORef
+import Data.List
 import qualified Data.Map as M
 import Control.Monad
+import ModML.Solver.ModelTransformations
+import qualified ModML.Core.BasicDAEModel as B
+import qualified ModML.Solver.CSVSolver as S
+import qualified ModML.Solver.BasicDAESolver as S
 
-data CSVSolve = CSVSolve { modelFile :: String, {- debug :: Bool, -} intermediateC :: Bool,
+data CSVSolve = CSVSolve { modelFile :: String, intermediateC :: Bool,
                            profile :: Bool,
                            includedir :: [String],
                            startTime :: Double, maxSolverStep :: Double, maxReportStep :: Double,
                            endTime :: Double, showEveryStep :: Bool, relativeErrorTolerance :: Double,
-                           absoluteErrorTolerance :: Double
+                           absoluteErrorTolerance :: Double, removeConstraint :: [String],
+                           addConstraint :: [(String, Double)],
+                           sensitivityVariable :: [String], sensitivityLowerBound :: [Double],
+                           sensitivityUpperBound :: [Double], sensitivityStep :: [Double]
                          }
                   deriving (Show, Data, Typeable)
 
@@ -51,7 +58,19 @@ csvSolveArgs =
                relativeErrorTolerance = 1E-6 &=
                  help "The relative error tolerance" &= typ "REAL",
                absoluteErrorTolerance = 1E-6 &=
-                 help "The absolute error tolerance" &= typ "REAL"
+                 help "The absolute error tolerance" &= typ "REAL",
+               removeConstraint = def &=
+                 help "Constraints in the form of variable=value to remove (given as annotated variable name)",
+               addConstraint = def &=
+                 help "Constraints to add, as annotated variable name and real number value",
+               sensitivityVariable = def &=
+                 help "Annotated variable name to do sensitivity analysis on",
+               sensitivityLowerBound = def &=
+                 help "Lower bound for the sensitivity analysis",
+               sensitivityUpperBound = def &=
+                 help "Upper bound for the sensitivity analysis",
+               sensitivityStep = def &=
+                 help "Step size for the sensitivity analysis"
              }
 
 main = cmdArgs csvSolveArgs >>= csvAutoSolver
@@ -84,12 +103,40 @@ commentMaybePackage =
          liftM Just $ liftM2 (:) alphaNum $ many (alphaNum <|> char '_' <|> char '-')
        ) <|> (manyTill anyChar whitespaceBreaking >> return Nothing)
 
-showCSVSolver modelModule dumpIntermediate =
+showCSVSolver modelModule (CSVSolve { intermediateC = intermediateC,
+                              startTime = startTime, maxSolverStep = maxSolverStep,
+                              maxReportStep = maxReportStep, endTime = endTime,
+                              showEveryStep = showEveryStep, relativeErrorTolerance = relativeErrorTolerance,
+                              absoluteErrorTolerance = absoluteErrorTolerance, removeConstraint = removeConstraint,
+                              addConstraint = addConstraint, sensitivityVariable = sensitivityVariable,
+                              sensitivityLowerBound = sensitivityLowerBound, sensitivityUpperBound = sensitivityUpperBound,
+                              sensitivityStep = sensitivityStep }) =
+  let
+    transformations = ((map DropConstraint removeConstraint) ++ (map (\(n, v) -> FixVariable n v) addConstraint))
+    sensitivitySettings = zip4 sensitivityVariable sensitivityLowerBound sensitivityUpperBound sensitivityStep
+    analysis = if null sensitivitySettings
+               then
+                 S.UniformTimeCourse
+               else
+                 S.SensitivityAnalysis (map (\(v, lb, ub, s) -> S.SensitivityVariable v (lb, ub) s) sensitivitySettings)
+    params :: S.SolverParameters B.RealVariable
+    params = S.defaultSolverParameters {
+               S.tStart = startTime, S.maxSolverStep = maxSolverStep,
+               S.maxReportStep = maxReportStep, S.tEnd = endTime,
+               S.showEveryStep = if showEveryStep then 1.0 else 0.0,
+               S.reltol = relativeErrorTolerance, S.abstol = absoluteErrorTolerance }
+  in
     showString "import " .
     showString modelModule .
     showString "\n\
                \import ModML.Solver.CSVSolver\n\
-               \main = csvMain model " . shows dumpIntermediate
+               \import ModML.Solver.ModelTransformations\n\
+               \import ModML.Solver.BasicDAESolver\n\
+               \main = csvMain model " . shows intermediateC . showString " (" .
+    shows transformations .
+    showString ") (" .
+    shows (params, analysis) .
+    showString ")\n"
 
 intermix :: [a] -> [a] -> [a]
 intermix [] _ = []
@@ -107,42 +154,42 @@ whileM m = do
       False -> return ()
       True -> whileM m
 
-csvAutoSolver (args@CSVSolve { intermediateC = dumpc, profile = prof, modelFile = mf, includedir = dirs }) = do
-  let dbg = False
+csvAutoSolver (args@CSVSolve { modelFile = modelFile,
+                               profile = profile, includedir = includedir }) = do
   -- Work out what packages we need...
-  packages <- liftM withRight $ parseFromFile extractPackages mf
+  packages <- liftM withRight $ parseFromFile extractPackages modelFile
   -- Get a name for the model...
-  let (modelPath, modelFile) = splitFileName mf
+  let (modelPath, modelFilePart) = splitFileName modelFile
   cwd <- getCurrentDirectory
   let modelPath' = fromMaybe (error "Invalid relative model path") $ absNormPath cwd modelPath
-  let modelModule = dropExtension modelFile
+  let modelModule = dropExtension modelFilePart
   let usePackages = ("base":"ModML-Core":"ModML-Solver":packages)
   tmpdir <- getTemporaryDirectory
   brackettmpdir (tmpdir </> "solveXXXXXX") $ \dirname -> do
-      let includePaths = (dirname:modelPath':dirs)
+      let includePaths = (dirname:modelPath':includedir)
       let solveFile = dirname </> "SolveAsCSV.hs"
       withFile solveFile WriteMode $ \hSolveFile ->
         -- Write the model...
-        hPutStr hSolveFile (showCSVSolver modelModule dumpc "")
+        hPutStr hSolveFile (showCSVSolver modelModule args "")
       -- Compile it...
-      case dbg
-        of
-          False ->  do
-            let profRtsOpts = if prof then ["+RTS", "-p"] else []
-            rawSystem "ghc" $ ("--make":"-hide-all-packages":((map ("-i"++) includePaths) ++
-                                                             (beforeEach "-package" usePackages) ++
-                                                             [solveFile]))
-            when prof $ do
-              rawSystem "ghc" $ ("--make":"-hide-all-packages":
-                                 "-prof":"-auto-all":"-caf-all":"-rtsopts":
-                                 "-osuf":"p_o":((map ("-i"++) includePaths) ++
-                                           (beforeEach "-package" usePackages) ++
-                                           [solveFile]))
-              return ()
-            let binary = tmpdir </> (dropExtension solveFile)
-            rawSystem binary $ ["1", show . startTime $ args, show . maxSolverStep $ args,
-                                show .  maxReportStep $ args, show . endTime $ args,
-                                show . showEveryStep $ args, show . relativeErrorTolerance $ args,
-                                show . absoluteErrorTolerance $ args] ++ profRtsOpts
-            return ()
-          True -> undefined
+      let profRtsOpts = if profile then ["+RTS", "-p", "-xc"] else []
+      if profile
+        then do
+          rawSystem "ghc" ("--make":"-hide-all-packages":"-auto-all":"-caf-all":(
+                              (map ("-i"++) includePaths) ++
+                              (beforeEach "-package" usePackages) ++
+                              [solveFile]))
+          rawSystem "ghc" $ ("--make":"-hide-all-packages":
+                             "-prof":"-auto-all":"-caf-all":"-rtsopts":
+                             "-osuf":"p_o":((map ("-i"++) includePaths) ++
+                                            (beforeEach "-package" usePackages) ++
+                                            [solveFile]))
+        else
+          rawSystem "ghc" $ ("--make":"-hide-all-packages":
+                               ((map ("-i"++) includePaths) ++
+                                (beforeEach "-package" usePackages) ++
+                                [solveFile]))
+
+      let binary = tmpdir </> (dropExtension solveFile)
+      rawSystem binary profRtsOpts
+      return ()

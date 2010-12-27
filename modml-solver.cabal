@@ -1,6 +1,6 @@
 name:                 ModML-Solver
 version:              0.0.1
-cabal-version:        >= 1.6
+cabal-version:        >= 1.8
 license:              BSD3
 build-type:           Simple
 copyright:            Andrew Miller
@@ -16,6 +16,7 @@ library
   exposed-modules:
     ModML.Solver.BasicDAESolver
     ModML.Solver.CSVSolver
+    ModML.Solver.ModelTransformations
   ghc-prof-options: -prof -auto-all -caf-all
   build-depends: base ==4.*,
                  process ==1.*,
@@ -27,11 +28,13 @@ library
                  syb >= 0.1 && < 0.3,
                  random == 1.*,
                  containers >= 0.3 && < 0.5,
-                 ModML-Core == 0.0.*
+                 ModML-Core == 0.0.*,
+                 directory == 1.*
   Other-Modules: Paths_ModML_Solver
 
 executable csv-autosolver
   hs-source-dirs: csv-autosolver
+  ghc-prof-options: -prof -auto-all -caf-all -rtsopts
   Main-Is: Main.hs
   build-depends: base == 4.*,
                  parsec == 3.*,
@@ -39,7 +42,7 @@ executable csv-autosolver
                  MissingH == 1.*,
                  directory == 1.*,
                  process == 1.*,
-                 cmdargs >= 0.4 && < 0.7
-                 -- dequeue == 0.1.*,
-                 -- ghc >= 6.8 && < 8,
-                 -- ghc-paths == 0.1.*,
+                 cmdargs >= 0.4 && < 0.7,
+                 containers >= 0.3 && < 0.5,
+                 ModML-Core == 0.0.*,
+                 ModML-Solver
