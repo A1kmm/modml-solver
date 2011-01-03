@@ -198,7 +198,7 @@ show_results(double t, N_Vector y, N_Vector derivy)
   {
     if (i > 0)
       printf(",");
-    printf("%g", dv[i]);
+    printf("%.16g", dv[i]);
   }
   printf("]),\n");
 }
