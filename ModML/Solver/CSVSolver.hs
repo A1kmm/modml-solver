@@ -116,7 +116,7 @@ doRequest writeFn False model paramList resHandler =
     Right res ->
       case writeFn
         of
-          Nothing -> resHandler model res stdin
+          Nothing -> resHandler model res stdout
           Just fn -> withFile fn WriteMode (resHandler model res)
     
 doRequest _ True model paramList _ =
